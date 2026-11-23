@@ -1,0 +1,1094 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// USERS & AUTHENTICATION
+// ============================================================================
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  STAFF
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  password  String
+  firstName String?
+  lastName  String?
+  phone     String?
+  role      UserRole   @default(CUSTOMER)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  addresses            Address[]
+  carts                Cart[]
+  orders               Order[]
+  quotes               Quote[]
+  designProjects       DesignProject[]
+  artworkFiles         ArtworkFile[]
+  organisationMembers  OrganisationMember[]
+  notifications        Notification[]
+  auditLogs            AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+// ============================================================================
+// ORGANISATIONS (Business Accounts)
+// ============================================================================
+
+enum OrganisationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model Organisation {
+  id              String             @id @default(cuid())
+  name            String
+  companyNumber   String?
+  vatNumber       String?
+  phone           String?
+  email           String?
+  status          OrganisationStatus @default(ACTIVE)
+  billingAddress  String?
+  shippingAddress String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Relations
+  members      OrganisationMember[]
+  orders       Order[]
+  artworkFiles ArtworkFile[]
+
+  @@index([status])
+  @@map("organisations")
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model OrganisationMember {
+  id             String       @id @default(cuid())
+  organisationId String
+  userId         String
+  role           MemberRole   @default(MEMBER)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId])
+  @@index([organisationId])
+  @@index([userId])
+  @@map("organisation_members")
+}
+
+// ============================================================================
+// ADDRESSES
+// ============================================================================
+
+enum AddressType {
+  BILLING
+  SHIPPING
+  BOTH
+}
+
+model Address {
+  id         String      @id @default(cuid())
+  userId     String
+  type       AddressType @default(BOTH)
+  firstName  String
+  lastName   String
+  company    String?
+  line1      String
+  line2      String?
+  city       String
+  county     String?
+  postcode   String
+  country    String      @default("GB")
+  phone      String?
+  isDefault  Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  // Relations
+  user                   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ordersBilling          Order[] @relation("BillingAddress")
+  ordersShipping         Order[] @relation("ShippingAddress")
+
+  @@index([userId])
+  @@index([postcode])
+  @@map("addresses")
+}
+
+// ============================================================================
+// PRODUCT CATALOGUE
+// ============================================================================
+
+enum CategoryStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Category {
+  id          String         @id @default(cuid())
+  name        String
+  slug        String         @unique
+  description String?
+  parentId    String?
+  imageUrl    String?
+  status      CategoryStatus @default(ACTIVE)
+  sortOrder   Int            @default(0)
+  metaTitle   String?
+  metaDesc    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@index([slug])
+  @@index([parentId])
+  @@index([status])
+  @@map("categories")
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ProductType {
+  BUSINESS_PRINTING
+  CLOTHING
+  PROMOTIONAL
+  SIGNS_DISPLAYS
+  STICKERS_PACKAGING
+  PERSONALISED_GIFTS
+}
+
+model Product {
+  id               String        @id @default(cuid())
+  sku              String        @unique
+  name             String
+  slug             String        @unique
+  description      String?
+  shortDesc        String?
+  categoryId       String
+  type             ProductType
+  status           ProductStatus @default(DRAFT)
+  basePrice        Decimal       @db.Decimal(10, 2)
+  taxRate          Decimal       @default(0.20) @db.Decimal(5, 4)
+  requiresArtwork  Boolean       @default(false)
+  allowsDesign     Boolean       @default(false)
+  minQuantity      Int           @default(1)
+  maxQuantity      Int?
+  productionDays   Int           @default(5)
+  metaTitle        String?
+  metaDesc         String?
+  sortOrder        Int           @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relations
+  category         Category            @relation(fields: [categoryId], references: [id])
+  images           ProductImage[]
+  variants         ProductVariant[]
+  options          ProductOption[]
+  pricingRules     PricingRule[]
+  supplierProducts SupplierProduct[]
+  cartItems        CartItem[]
+  orderItems       OrderItem[]
+  quoteItems       QuoteItem[]
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([status])
+  @@index([type])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  altText   String?
+  sortOrder Int      @default(0)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+model ProductVariant {
+  id          String  @id @default(cuid())
+  productId   String
+  sku         String  @unique
+  name        String
+  priceDelta  Decimal @default(0) @db.Decimal(10, 2)
+  stock       Int     @default(0)
+  isAvailable Boolean @default(true)
+  sortOrder   Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([sku])
+  @@map("product_variants")
+}
+
+enum OptionType {
+  SELECT
+  MULTI_SELECT
+  TEXT
+  NUMBER
+  COLOR
+  SIZE
+  MATERIAL
+  FINISH
+}
+
+model ProductOption {
+  id          String     @id @default(cuid())
+  productId   String
+  name        String
+  label       String
+  type        OptionType
+  required    Boolean    @default(false)
+  sortOrder   Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  product Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  values  OptionValue[]
+
+  @@index([productId])
+  @@map("product_options")
+}
+
+model OptionValue {
+  id          String  @id @default(cuid())
+  optionId    String
+  value       String
+  label       String
+  priceDelta  Decimal @default(0) @db.Decimal(10, 2)
+  isAvailable Boolean @default(true)
+  sortOrder   Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  option ProductOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@index([optionId])
+  @@map("option_values")
+}
+
+// ============================================================================
+// SUPPLIERS & FULFILLMENT
+// ============================================================================
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum SupplierType {
+  MANUAL
+  API
+}
+
+model Supplier {
+  id              String         @id @default(cuid())
+  name            String
+  code            String         @unique
+  type            SupplierType   @default(MANUAL)
+  status          SupplierStatus @default(ACTIVE)
+  contactName     String?
+  email           String?
+  phone           String?
+  website         String?
+  apiKey          String?
+  apiEndpoint     String?
+  productionDays  Int            @default(5)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Relations
+  supplierProducts  SupplierProduct[]
+  fulfilmentOrders  FulfilmentOrder[]
+
+  @@index([code])
+  @@index([status])
+  @@map("suppliers")
+}
+
+model SupplierProduct {
+  id                String   @id @default(cuid())
+  supplierId        String
+  productId         String
+  supplierSku       String
+  productionCost    Decimal  @db.Decimal(10, 2)
+  productionDays    Int      @default(5)
+  minimumQuantity   Int      @default(1)
+  isAvailable       Boolean  @default(true)
+  priority          Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, productId])
+  @@index([supplierId])
+  @@index([productId])
+  @@map("supplier_products")
+}
+
+// ============================================================================
+// PRICING
+// ============================================================================
+
+enum PricingType {
+  FIXED
+  QUANTITY_TIER
+  DYNAMIC
+}
+
+model PricingRule {
+  id          String      @id @default(cuid())
+  productId   String
+  name        String
+  type        PricingType @default(FIXED)
+  basePrice   Decimal     @db.Decimal(10, 2)
+  markup      Decimal     @default(0) @db.Decimal(5, 2)
+  isActive    Boolean     @default(true)
+  validFrom   DateTime?
+  validUntil  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantityTiers QuantityTier[]
+
+  @@index([productId])
+  @@index([isActive])
+  @@map("pricing_rules")
+}
+
+model QuantityTier {
+  id            String  @id @default(cuid())
+  pricingRuleId String
+  minQuantity   Int
+  maxQuantity   Int?
+  price         Decimal @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+
+  // Relations
+  pricingRule PricingRule @relation(fields: [pricingRuleId], references: [id], onDelete: Cascade)
+
+  @@index([pricingRuleId])
+  @@map("quantity_tiers")
+}
+
+// ============================================================================
+// QUOTES
+// ============================================================================
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Quote {
+  id          String      @id @default(cuid())
+  quoteNumber String      @unique
+  userId      String
+  status      QuoteStatus @default(DRAFT)
+  subtotal    Decimal     @db.Decimal(10, 2)
+  taxAmount   Decimal     @db.Decimal(10, 2)
+  total       Decimal     @db.Decimal(10, 2)
+  validUntil  DateTime
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  user  User        @relation(fields: [userId], references: [id])
+  items QuoteItem[]
+
+  @@index([userId])
+  @@index([quoteNumber])
+  @@index([status])
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id              String  @id @default(cuid())
+  quoteId         String
+  productId       String
+  quantity        Int
+  configuration   Json?
+  unitPrice       Decimal @db.Decimal(10, 2)
+  totalPrice      Decimal @db.Decimal(10, 2)
+  productionDays  Int
+  createdAt       DateTime @default(now())
+
+  // Relations
+  quote   Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([quoteId])
+  @@index([productId])
+  @@map("quote_items")
+}
+
+// ============================================================================
+// SHOPPING CART
+// ============================================================================
+
+enum CartStatus {
+  ACTIVE
+  ABANDONED
+  CONVERTED
+}
+
+model Cart {
+  id         String     @id @default(cuid())
+  userId     String?
+  sessionId  String?
+  status     CartStatus @default(ACTIVE)
+  expiresAt  DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  // Relations
+  user  User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([status])
+  @@map("carts")
+}
+
+model CartItem {
+  id            String   @id @default(cuid())
+  cartId        String
+  productId     String
+  quantity      Int
+  configuration Json?
+  unitPrice     Decimal  @db.Decimal(10, 2)
+  totalPrice    Decimal  @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([cartId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+// ============================================================================
+// ORDERS
+// ============================================================================
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  ARTWORK_REQUIRED
+  ARTWORK_APPROVED
+  IN_PRODUCTION
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+  FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model Order {
+  id                String        @id @default(cuid())
+  orderNumber       String        @unique
+  userId            String
+  organisationId    String?
+  billingAddressId  String
+  shippingAddressId String
+  status            OrderStatus   @default(PENDING_PAYMENT)
+  paymentStatus     PaymentStatus @default(PENDING)
+  subtotal          Decimal       @db.Decimal(10, 2)
+  taxAmount         Decimal       @db.Decimal(10, 2)
+  shippingAmount    Decimal       @default(0) @db.Decimal(10, 2)
+  discountAmount    Decimal       @default(0) @db.Decimal(10, 2)
+  total             Decimal       @db.Decimal(10, 2)
+  currency          String        @default("GBP")
+  discountCodeId    String?
+  customerNotes     String?
+  adminNotes        String?
+  estimatedDelivery DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relations
+  user             User              @relation(fields: [userId], references: [id])
+  organisation     Organisation?     @relation(fields: [organisationId], references: [id])
+  billingAddress   Address           @relation("BillingAddress", fields: [billingAddressId], references: [id])
+  shippingAddress  Address           @relation("ShippingAddress", fields: [shippingAddressId], references: [id])
+  discountCode     DiscountCode?     @relation(fields: [discountCodeId], references: [id])
+  items            OrderItem[]
+  payments         Payment[]
+  refunds          Refund[]
+  fulfilmentOrders FulfilmentOrder[]
+  auditLogs        AuditLog[]
+
+  @@index([userId])
+  @@index([organisationId])
+  @@index([orderNumber])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+enum OrderItemStatus {
+  PENDING
+  ARTWORK_REQUIRED
+  ARTWORK_APPROVED
+  ARTWORK_REJECTED
+  IN_PRODUCTION
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
+model OrderItem {
+  id              String          @id @default(cuid())
+  orderId         String
+  productId       String
+  quantity        Int
+  configuration   Json?
+  unitPrice       Decimal         @db.Decimal(10, 2)
+  totalPrice      Decimal         @db.Decimal(10, 2)
+  taxAmount       Decimal         @db.Decimal(10, 2)
+  status          OrderItemStatus @default(PENDING)
+  productionDays  Int
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  order            Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product          Product           @relation(fields: [productId], references: [id])
+  artworkFiles     ArtworkFile[]
+  fulfilmentItems  FulfilmentItem[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([status])
+  @@map("order_items")
+}
+
+// ============================================================================
+// PAYMENTS & REFUNDS
+// ============================================================================
+
+enum PaymentMethod {
+  CARD
+  BANK_TRANSFER
+  PAYPAL
+  OTHER
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  orderId          String
+  amount           Decimal       @db.Decimal(10, 2)
+  currency         String        @default("GBP")
+  method           PaymentMethod @default(CARD)
+  status           PaymentStatus @default(PENDING)
+  stripePaymentId  String?       @unique
+  stripeCustomerId String?
+  failureReason    String?
+  metadata         Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([stripePaymentId])
+  @@index([status])
+  @@map("payments")
+}
+
+enum RefundReason {
+  CUSTOMER_REQUEST
+  DEFECTIVE_PRODUCT
+  WRONG_ITEM
+  PRODUCTION_ERROR
+  OTHER
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Refund {
+  id              String       @id @default(cuid())
+  orderId         String
+  amount          Decimal      @db.Decimal(10, 2)
+  reason          RefundReason
+  status          RefundStatus @default(PENDING)
+  stripeRefundId  String?      @unique
+  notes           String?
+  processedBy     String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+  @@map("refunds")
+}
+
+// ============================================================================
+// ARTWORK & DESIGN
+// ============================================================================
+
+enum ArtworkStatus {
+  UPLOADED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  PRINT_READY
+}
+
+model ArtworkFile {
+  id             String        @id @default(cuid())
+  orderItemId    String
+  userId         String
+  organisationId String?
+  fileUrl        String
+  fileName       String
+  fileSize       Int
+  fileType       String
+  status         ArtworkStatus @default(UPLOADED)
+  reviewNotes    String?
+  uploadedAt     DateTime      @default(now())
+  reviewedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relations
+  orderItem    OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id])
+  organisation Organisation? @relation(fields: [organisationId], references: [id])
+  proofs       ArtworkProof[]
+
+  @@index([orderItemId])
+  @@index([userId])
+  @@index([organisationId])
+  @@index([status])
+  @@map("artwork_files")
+}
+
+model ArtworkProof {
+  id            String   @id @default(cuid())
+  artworkFileId String
+  proofUrl      String
+  version       Int
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  // Relations
+  artworkFile ArtworkFile @relation(fields: [artworkFileId], references: [id], onDelete: Cascade)
+
+  @@index([artworkFileId])
+  @@map("artwork_proofs")
+}
+
+enum DesignStatus {
+  DRAFT
+  SAVED
+  SUBMITTED
+}
+
+model DesignProject {
+  id          String       @id @default(cuid())
+  userId      String
+  name        String
+  productType String?
+  status      DesignStatus @default(DRAFT)
+  thumbnail   String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions DesignVersion[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("design_projects")
+}
+
+model DesignVersion {
+  id              String   @id @default(cuid())
+  designProjectId String
+  version         Int
+  designData      Json
+  exportUrl       String?
+  createdAt       DateTime @default(now())
+
+  // Relations
+  project DesignProject @relation(fields: [designProjectId], references: [id], onDelete: Cascade)
+
+  @@index([designProjectId])
+  @@map("design_versions")
+}
+
+model DesignTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  productType String?
+  thumbnail   String
+  designData  Json
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([productType])
+  @@index([isPublic])
+  @@map("design_templates")
+}
+
+// ============================================================================
+// FULFILLMENT & SHIPPING
+// ============================================================================
+
+enum FulfilmentStatus {
+  PENDING
+  ASSIGNED
+  SUBMITTED
+  IN_PRODUCTION
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model FulfilmentOrder {
+  id                String            @id @default(cuid())
+  orderId           String
+  supplierId        String
+  status            FulfilmentStatus  @default(PENDING)
+  supplierOrderRef  String?
+  estimatedDelivery DateTime?
+  submittedAt       DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  order    Order            @relation(fields: [orderId], references: [id])
+  supplier Supplier         @relation(fields: [supplierId], references: [id])
+  items    FulfilmentItem[]
+  shipments Shipment[]
+
+  @@index([orderId])
+  @@index([supplierId])
+  @@index([status])
+  @@map("fulfilment_orders")
+}
+
+model FulfilmentItem {
+  id                String   @id @default(cuid())
+  fulfilmentOrderId String
+  orderItemId       String
+  quantity          Int
+  productionCost    Decimal  @db.Decimal(10, 2)
+  createdAt         DateTime @default(now())
+
+  // Relations
+  fulfilmentOrder FulfilmentOrder @relation(fields: [fulfilmentOrderId], references: [id], onDelete: Cascade)
+  orderItem       OrderItem       @relation(fields: [orderItemId], references: [id])
+
+  @@index([fulfilmentOrderId])
+  @@index([orderItemId])
+  @@map("fulfilment_items")
+}
+
+enum ShipmentStatus {
+  PENDING
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+model Shipment {
+  id                String         @id @default(cuid())
+  fulfilmentOrderId String
+  carrier           String?
+  trackingNumber    String?
+  trackingUrl       String?
+  status            ShipmentStatus @default(PENDING)
+  shippedAt         DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relations
+  fulfilmentOrder FulfilmentOrder  @relation(fields: [fulfilmentOrderId], references: [id])
+  trackingEvents  TrackingEvent[]
+
+  @@index([fulfilmentOrderId])
+  @@index([trackingNumber])
+  @@index([status])
+  @@map("shipments")
+}
+
+model TrackingEvent {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  status      String
+  location    String?
+  description String?
+  timestamp   DateTime
+  createdAt   DateTime @default(now())
+
+  // Relations
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([timestamp])
+  @@map("tracking_events")
+}
+
+// ============================================================================
+// PROMOTIONS & DISCOUNTS
+// ============================================================================
+
+enum PromotionType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+}
+
+enum PromotionStatus {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+}
+
+model Promotion {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  type        PromotionType
+  value       Decimal         @db.Decimal(10, 2)
+  minOrder    Decimal?        @db.Decimal(10, 2)
+  maxDiscount Decimal?        @db.Decimal(10, 2)
+  status      PromotionStatus @default(ACTIVE)
+  validFrom   DateTime
+  validUntil  DateTime
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relations
+  discountCodes DiscountCode[]
+
+  @@index([status])
+  @@index([validFrom, validUntil])
+  @@map("promotions")
+}
+
+model DiscountCode {
+  id          String   @id @default(cuid())
+  promotionId String
+  code        String   @unique
+  usageLimit  Int?
+  usageCount  Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  orders    Order[]
+
+  @@index([code])
+  @@index([promotionId])
+  @@index([isActive])
+  @@map("discount_codes")
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+enum NotificationType {
+  ORDER_CONFIRMATION
+  PAYMENT_CONFIRMED
+  ARTWORK_REQUIRED
+  ARTWORK_APPROVED
+  ARTWORK_REJECTED
+  ORDER_DISPATCHED
+  ORDER_DELIVERED
+  REFUND_PROCESSED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String
+  type      NotificationType
+  status    NotificationStatus @default(PENDING)
+  subject   String
+  body      String
+  metadata  Json?
+  sentAt    DateTime?
+  createdAt DateTime           @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@map("notifications")
+}
+
+// ============================================================================
+// AUDIT & WEBHOOKS
+// ============================================================================
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PAYMENT
+  REFUND
+  STATUS_CHANGE
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  orderId    String?
+  action     AuditAction
+  entity     String
+  entityId   String?
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  // Relations
+  user  User?  @relation(fields: [userId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+enum WebhookEventStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+model WebhookEvent {
+  id          String             @id @default(cuid())
+  source      String
+  eventType   String
+  payload     Json
+  status      WebhookEventStatus @default(PENDING)
+  attempts    Int                @default(0)
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([source])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
