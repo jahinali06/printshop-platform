@@ -49,3 +49,6 @@ Thumbs.db
 *.db
 *.db-journal
 prisma/migrations/dev.db
+
+# Project-local PostgreSQL data
+.local-db/
