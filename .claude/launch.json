@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "local-db",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["packages/database/scripts/local-db.mjs"],
+      "port": 5432
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "pnpm@12.21.0", "--filter", "@printshop/api", "dev"],
+      "port": 3001,
+      "url": "http://localhost:3001"
+    }
+  ]
+}
